@@ -10,7 +10,11 @@ package frc.robot.subsystems.drive;
 import static frc.robot.subsystems.drive.DriveConstants.*;
 import static frc.robot.util.SparkUtil.*;
 
+import com.ctre.phoenix6.BaseStatusSignal;
+import com.ctre.phoenix6.StatusSignal;
+import com.ctre.phoenix6.configs.CANcoderConfiguration;
 import com.ctre.phoenix6.hardware.CANcoder;
+import com.ctre.phoenix6.signals.SensorDirectionValue;
 import com.revrobotics.AbsoluteEncoder;
 import com.revrobotics.RelativeEncoder;
 import com.revrobotics.spark.ClosedLoopSlot;
@@ -32,6 +36,12 @@ import edu.wpi.first.math.controller.PIDController;
 import edu.wpi.first.math.controller.ProfiledPIDController;
 import edu.wpi.first.math.filter.Debouncer;
 import edu.wpi.first.math.geometry.Rotation2d;
+import edu.wpi.first.math.util.Units;
+import edu.wpi.first.units.measure.Angle;
+import edu.wpi.first.units.measure.AngularVelocity;
+import edu.wpi.first.units.measure.Current;
+import edu.wpi.first.units.measure.Voltage;
+
 import java.util.Queue;
 import java.util.function.DoubleSupplier;
 
@@ -56,6 +66,10 @@ public class ModuleIOSpark implements ModuleIO {
   // Queue inputs from odometry thread
   private final Queue<Double> timestampQueue;
   private final Queue<Double> drivePositionQueue;
+  //private final Queue<Double> turnPositionQueue;
+
+  // Inputs from turn motor
+  private final StatusSignal<Angle> turnAbsolutePosition;
   private final Queue<Double> turnPositionQueue;
 
   // Connection debouncers
@@ -140,9 +154,10 @@ public class ModuleIOSpark implements ModuleIO {
                 driveConfig, ResetMode.kResetSafeParameters, PersistMode.kPersistParameters));
     tryUntilOk(driveSpark, 5, () -> driveEncoder.setPosition(0.0));
 
-    turnController.enableContinuousInput(turnPIDMinInput, turnPIDMaxInput);
+    //turnController.enableContinuousInput(turnPIDMinInput, turnPIDMaxInput);
     // Configure turn motor
     var turnConfig = new SparkMaxConfig();
+    
     turnConfig
         .inverted(turnInverted)
         .idleMode(IdleMode.kBrake)
@@ -163,13 +178,25 @@ public class ModuleIOSpark implements ModuleIO {
         () ->
             turnSpark.configure(
                 turnConfig, ResetMode.kResetSafeParameters, PersistMode.kPersistParameters));
+    // Configure CANCoder
+    CANcoderConfiguration cancoderConfig = new CANcoderConfiguration();
+    cancoderConfig.MagnetSensor.MagnetOffset = 0.0;
+    cancoderConfig.MagnetSensor.SensorDirection =
+        DriveConstants.turnEncoderInverted
+            ? SensorDirectionValue.Clockwise_Positive
+            : SensorDirectionValue.CounterClockwise_Positive;
+    cancoder.getConfigurator().apply(cancoderConfig);
 
     // Create odometry queues
     timestampQueue = SparkOdometryThread.getInstance().makeTimestampQueue();
     drivePositionQueue =
         SparkOdometryThread.getInstance().registerSignal(driveSpark, driveEncoder::getPosition);
+    turnAbsolutePosition = cancoder.getAbsolutePosition();
     turnPositionQueue =
-        SparkOdometryThread.getInstance().registerSignal(turnSpark, () -> cancoder.getAbsolutePosition().getValueAsDouble());
+        SparkOdometryThread.getInstance().registerSignal(turnSpark, () -> turnAbsolutePosition.getValueAsDouble());
+    BaseStatusSignal.setUpdateFrequencyForAll(
+        50.0,
+        turnAbsolutePosition);
   }
 
   @Override
@@ -189,7 +216,7 @@ public class ModuleIOSpark implements ModuleIO {
     sparkStickyFault = false;
     ifOk(
         turnSpark,
-        () -> cancoder.getAbsolutePosition().getValueAsDouble(),
+        () -> turnAbsolutePosition.getValueAsDouble(),
         (value) -> inputs.turnPosition = new Rotation2d(value).minus(zeroRotation));
     ifOk(turnSpark, () -> cancoder.getVelocity().getValueAsDouble(), (value) -> inputs.turnVelocityRadPerSec = value);
     ifOk(
@@ -240,7 +267,7 @@ public class ModuleIOSpark implements ModuleIO {
         MathUtil.inputModulus(
             rotation.plus(zeroRotation).getRadians(), turnPIDMinInput, turnPIDMaxInput);
     turnController.setSetpoint(setpoint);
-    double outputVoltage = turnController.calculate(getCANCoderPosition());
+    double outputVoltage = turnController.calculate(Units.rotationsToRadians(cancoder.getAbsolutePosition().getValueAsDouble()), setpoint);
     setTurnOpenLoop(outputVoltage);
   }
   

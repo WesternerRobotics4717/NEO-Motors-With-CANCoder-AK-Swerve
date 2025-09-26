@@ -30,7 +30,7 @@ public class Robot extends LoggedRobot {
 
   public Robot() {
 
-    Logger.start(); // Start logging! No more data receivers, replay sources, or metadata values may be added.
+    
     Logger.recordMetadata("ProjectName", BuildConstants.MAVEN_NAME);
     Logger.recordMetadata("BuildDate", BuildConstants.BUILD_DATE);
     Logger.recordMetadata("GitSHA", BuildConstants.GIT_SHA);
@@ -74,8 +74,8 @@ public class Robot extends LoggedRobot {
     Logger.registerURCL(URCL.startExternal());
 
     // Start AdvantageKit logger
-    Logger.start();
-
+    Logger.start(); // Start logging! No more data receivers, replay sources, or metadata values may be added.
+    
     // Instantiate our RobotContainer. This will perform all our button bindings,
     // and put our autonomous chooser on the dashboard.
     robotContainer = new RobotContainer();
