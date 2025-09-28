@@ -185,6 +185,7 @@ public class ModuleIOSpark implements ModuleIO {
         DriveConstants.turnEncoderInverted
             ? SensorDirectionValue.Clockwise_Positive
             : SensorDirectionValue.CounterClockwise_Positive;
+    
     cancoder.getConfigurator().apply(cancoderConfig);
 
     // Create odometry queues
@@ -193,7 +194,7 @@ public class ModuleIOSpark implements ModuleIO {
         SparkOdometryThread.getInstance().registerSignal(driveSpark, driveEncoder::getPosition);
     turnAbsolutePosition = cancoder.getAbsolutePosition();
     turnPositionQueue =
-        SparkOdometryThread.getInstance().registerSignal(turnSpark, () -> turnAbsolutePosition.getValueAsDouble());
+        SparkOdometryThread.getInstance().registerSignal(turnSpark, () -> Units.rotationsToRadians(turnAbsolutePosition.getValueAsDouble()));
     BaseStatusSignal.setUpdateFrequencyForAll(
         50.0,
         turnAbsolutePosition);
@@ -216,9 +217,9 @@ public class ModuleIOSpark implements ModuleIO {
     sparkStickyFault = false;
     ifOk(
         turnSpark,
-        () -> turnAbsolutePosition.getValueAsDouble(),
-        (value) -> inputs.turnPosition = new Rotation2d(value).minus(zeroRotation));
-    ifOk(turnSpark, () -> cancoder.getVelocity().getValueAsDouble(), (value) -> inputs.turnVelocityRadPerSec = value);
+        () -> Units.rotationsToRadians(turnAbsolutePosition.getValueAsDouble()),
+        (value) -> inputs.turnPosition = new Rotation2d(value).minus(zeroRotation)); // This TAKES RADIANS
+    ifOk(turnSpark, () -> Units.rotationsToRadians(cancoder.getVelocity().getValueAsDouble()), (value) -> inputs.turnVelocityRadPerSec = value);
     ifOk(
         turnSpark,
         new DoubleSupplier[] {turnSpark::getAppliedOutput, turnSpark::getBusVoltage},
@@ -267,12 +268,16 @@ public class ModuleIOSpark implements ModuleIO {
         MathUtil.inputModulus(
             rotation.plus(zeroRotation).getRadians(), turnPIDMinInput, turnPIDMaxInput);
     turnController.setSetpoint(setpoint);
-    double outputVoltage = turnController.calculate(Units.rotationsToRadians(cancoder.getAbsolutePosition().getValueAsDouble()), setpoint);
+    double outputVoltage = turnController.calculate(getCANCoderPositionRadians());
     setTurnOpenLoop(outputVoltage);
   }
   
-  private double getCANCoderPosition() {
+  private double getCANCoderPositionRAW() {
     return cancoder.getAbsolutePosition().getValueAsDouble();
+  }
+
+  private double getCANCoderPositionRadians() {
+    return cancoder.getAbsolutePosition().getValueAsDouble() * DriveConstants.turnEncoderPositionFactor;
   }
 
   @Override
@@ -288,6 +293,6 @@ public class ModuleIOSpark implements ModuleIO {
 
   @Override
   public double getPIDOutput() {
-    return turnController.calculate(getCANCoderPosition());
+    return turnController.calculate(getCANCoderPositionRadians());
   }
 }
