@@ -41,6 +41,7 @@ import edu.wpi.first.units.measure.Angle;
 import edu.wpi.first.units.measure.AngularVelocity;
 import edu.wpi.first.units.measure.Current;
 import edu.wpi.first.units.measure.Voltage;
+import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 
 import java.util.Queue;
 import java.util.function.DoubleSupplier;
@@ -51,6 +52,7 @@ import java.util.function.DoubleSupplier;
  */
 public class ModuleIOSpark implements ModuleIO {
   private final Rotation2d zeroRotation;
+  private final int currentModule;
 
   // Hardware objects
   private final SparkBase driveSpark;
@@ -79,6 +81,7 @@ public class ModuleIOSpark implements ModuleIO {
       new Debouncer(0.5, Debouncer.DebounceType.kFalling);
 
   public ModuleIOSpark(int module) {
+    currentModule = module;
     zeroRotation =
         switch (module) {
           case 0 -> frontLeftZeroRotation;
@@ -122,7 +125,7 @@ public class ModuleIOSpark implements ModuleIO {
     // Configure drive motor
     driveConfig = new SparkMaxConfig();
     driveConfig
-        .idleMode(IdleMode.kBrake)
+        .idleMode(IdleMode.kCoast)
         .smartCurrentLimit(driveMotorCurrentLimit)
         .voltageCompensation(12.0);
     driveConfig
@@ -154,7 +157,7 @@ public class ModuleIOSpark implements ModuleIO {
                 driveConfig, ResetMode.kResetSafeParameters, PersistMode.kPersistParameters));
     tryUntilOk(driveSpark, 5, () -> driveEncoder.setPosition(0.0));
 
-    //turnController.enableContinuousInput(turnPIDMinInput, turnPIDMaxInput);
+    turnController.enableContinuousInput(turnPIDMinInput, turnPIDMaxInput);
     // Configure turn motor
     var turnConfig = new SparkMaxConfig();
     
@@ -215,11 +218,14 @@ public class ModuleIOSpark implements ModuleIO {
 
     // Update turn inputs
     sparkStickyFault = false;
-    ifOk(
-        turnSpark,
-        () -> Units.rotationsToRadians(turnAbsolutePosition.getValueAsDouble()),
+    SmartDashboard.putNumber("Drive/Module"+currentModule+"/TurnAbsolute/Raw", turnAbsolutePosition.getValueAsDouble());
+    SmartDashboard.putNumber("Drive/Module"+currentModule+"/TurnAbsolute/Radians", Units.rotationsToRadians(turnAbsolutePosition.getValueAsDouble()));
+    SmartDashboard.putNumber("Drive/Module"+currentModule+"/Velocity/Raw", driveSpark.getAppliedOutput());
+    SmartDashboard.putNumber("Drive/Module"+currentModule+"/TurnOutput", turnSpark.getAppliedOutput());
+    ifOk(turnSpark, () -> Units.rotationsToRadians(turnAbsolutePosition.getValueAsDouble()),
         (value) -> inputs.turnPosition = new Rotation2d(value).minus(zeroRotation)); // This TAKES RADIANS
-    ifOk(turnSpark, () -> Units.rotationsToRadians(cancoder.getVelocity().getValueAsDouble()), (value) -> inputs.turnVelocityRadPerSec = value);
+    ifOk(turnSpark, () -> Units.rotationsToRadians(cancoder.getVelocity().getValueAsDouble()), 
+        (value) -> inputs.turnVelocityRadPerSec = value);
     ifOk(
         turnSpark,
         new DoubleSupplier[] {turnSpark::getAppliedOutput, turnSpark::getBusVoltage},
@@ -267,23 +273,26 @@ public class ModuleIOSpark implements ModuleIO {
     double setpoint =
         MathUtil.inputModulus(
             rotation.plus(zeroRotation).getRadians(), turnPIDMinInput, turnPIDMaxInput);
+    SmartDashboard.putNumber("Drive/Module" + currentModule + "/Setpoint", setpoint);
     turnController.setSetpoint(setpoint);
-    double outputVoltage = turnController.calculate(getCANCoderPositionRadians());
+    double outputVoltage = turnController.calculate(getCANCoderPositionRadians(), setpoint);
     setTurnOpenLoop(outputVoltage);
   }
   
-  private double getCANCoderPositionRAW() {
+  private double getCANCoderPositionRotations() {
     return cancoder.getAbsolutePosition().getValueAsDouble();
   }
 
   private double getCANCoderPositionRadians() {
-    return cancoder.getAbsolutePosition().getValueAsDouble() * DriveConstants.turnEncoderPositionFactor;
+    return Units.rotationsToRadians(cancoder.getAbsolutePosition().getValueAsDouble());
   }
 
   @Override
-  public void setDrivePID(double driveKp, double driveKd, double driveFF) {
+  public void setDrivePID(double driveKp, double driveKd, double driveKv, double driveKs) {
     //updates the pid values 
-    driveConfig.closedLoop.pidf(driveKp, 0, driveKd, driveFF);
+    driveConfig.closedLoop.pid(driveKp, 0, driveKd);
+    DriveConstants.driveKv = driveKv;
+    DriveConstants.driveKs = driveKs;
     driveSpark.configure(driveConfig, ResetMode.kResetSafeParameters, PersistMode.kPersistParameters);
   }
   @Override

@@ -74,8 +74,8 @@ public class Module {
 
     LoggedTunableNumber.ifChanged(
             hashCode(), () -> {
-                io.setDrivePID(driveP.get(), 0.0, driveD.get());
-            }, driveP, driveD);
+                io.setDrivePID(driveP.get(), driveD.get(), driveV.get(), driveS.get());
+            }, driveP, driveD, driveV, driveS);
             
     LoggedTunableNumber.ifChanged(
             hashCode(), () -> {
