@@ -24,6 +24,9 @@ import frc.robot.subsystems.drive.GyroIOPigeon2;
 import frc.robot.subsystems.drive.ModuleIO;
 import frc.robot.subsystems.drive.ModuleIOSim;
 import frc.robot.subsystems.drive.ModuleIOSpark;
+import frc.robot.subsystems.elevator.Elevator;
+import frc.robot.subsystems.quest.QuestNavSubsystem;
+
 import org.littletonrobotics.junction.networktables.LoggedDashboardChooser;
 
 /**
@@ -35,6 +38,8 @@ import org.littletonrobotics.junction.networktables.LoggedDashboardChooser;
 public class RobotContainer {
   // Subsystems
   private final Drive drive;
+  private final Elevator elevator;
+  private final QuestNavSubsystem QuestNavSubsystem;
 
   // Controller
   private final CommandXboxController controller = new CommandXboxController(0);
@@ -79,6 +84,8 @@ public class RobotContainer {
         break;
     }
 
+    elevator = new Elevator();
+    QuestNavSubsystem = new QuestNavSubsystem();
     // Set up auto routines
     autoChooser = new LoggedDashboardChooser<>("Auto Choices", AutoBuilder.buildAutoChooser());
 
@@ -140,6 +147,11 @@ public class RobotContainer {
                             new Pose2d(drive.getPose().getTranslation(), Rotation2d.kZero)),
                     drive)
                 .ignoringDisable(true));
+
+    controller.povDown().whileTrue(elevator.setVoltsCmd(-3));
+    controller.povUp().whileTrue(elevator.setVoltsCmd(3));
+    controller.povRight().whileTrue(elevator.setPIDCmd(6));
+    controller.povLeft().whileTrue(elevator.setPIDCmd(0));
   }
 
   /**
@@ -150,4 +162,7 @@ public class RobotContainer {
   public Command getAutonomousCommand() {
     return autoChooser.get();
   }
+  public QuestNavSubsystem getQuestNavSubsystem() {
+    return QuestNavSubsystem;
+}
 }
